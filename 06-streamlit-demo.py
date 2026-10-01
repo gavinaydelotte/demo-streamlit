@@ -16,6 +16,7 @@ col1, col2 = st.sidebar.columns(2)
 start_date = col1.date_input("Start Date", START)
 end_date = col2.date_input("End Date", END)
 mv_avg = st.sidebar.slider("Moving Average Window", min_value=1, max_value=100, value=50, step=1)
+run_analysis = st.sidebar.button("Run Analysis")
 
 def get_stock_data(ticker, start_date, end_date):
     try:
@@ -27,4 +28,45 @@ def get_stock_data(ticker, start_date, end_date):
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
     return data, f"Data for ticker '{ticker}' from {start_date} to {end_date} retrieved successfully."
+
+if run_analysis:
+    with st.spinner("Fetching data..."):
+        df, msg = get_stock_data(ticker, start_date, end_date)
+        if df is not None:
+            st.sidebar.success(msg)
+        else:
+            st.sidebar.error(msg)
+            st.stop()
+        df["MA"] = df["Close"].rolling(window=mv_avg).mean()
+        df['pct_chg'] = df['Close'].pct_change()
+        tab1, tab2, tab3 = st.tabs(['Chart', 'Statistics', 'Data'])
+
+        with tab1:
+            st.subheader(f"{ticker} Price Analysis")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Last Price", f"${df['Close'].iloc[-1]:.2f}")
+            col2.metric("Cumulative Change", f"{(df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]:.2%}")
+            col3.metric("Trading Days", f"{df['Close'].count()}")
+            fig = px.line(df, x=df.index, y=["Close", "MA"], labels={"x": "Date", "value": "Price"})
+            fig.update_layout(hovermode='x unified')
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            st.subheader(f"{ticker} Summary Statistics")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Daily Change Stats**")
+                summary = df["pct_chg"].describe()
+                st.dataframe(summary)
+            with col2:
+                price_stats = pd.DataFrame({
+                    'Metric': ['High', 'Low', 'Mean', 'Volatility'],
+                    'Values': [df['Close'].max(), df['Close'].min(), df['Close'].mean(), df['Close'].std()]
+                })
+                st.dataframe(price_stats)
+        with tab3:
+            st.subheader(f"{ticker} Raw Data")
+            st.dataframe(df)
+            csv = df.to_csv()
+            st.download_button(label="Download Raw Data", data=csv, file_name=f"{ticker}_Raw_Data.csv", mime='text/csv')
 
